@@ -10,7 +10,7 @@ namespace ez {
     template<typename float_t>
     static constexpr float_t pi = 3.141592653589793;
 
-    template<std::size_t fir_tap_count, typename float_t> // TODO: move hamming and sinc to ez_audio
+    template<std::size_t fir_tap_count, typename float_t> // TODO: move hamming and sinc to another file probably
     float_t hamming(float_t samples_ago) {
         auto ret = /*float_t(25./46.)*/float_t(.5)*(float_t(1)+std::cos(float_t(2)*samples_ago*pi<float_t>/float_t(fir_tap_count)));
         return ret;
