@@ -7,9 +7,6 @@
 #include "ez_math.h"
 
 namespace ez {
-    template<typename float_t>
-    static constexpr float_t pi = 3.141592653589793;
-
     template<std::size_t fir_tap_count, typename float_t> // TODO: move hamming and sinc to another file probably
     float_t hamming(float_t samples_ago) {
         auto ret = /*float_t(25./46.)*/float_t(.5)*(float_t(1)+std::cos(float_t(2)*samples_ago*pi<float_t>/float_t(fir_tap_count)));
@@ -54,6 +51,24 @@ namespace ez {
         private:
                 std::vector<float_t> src_buffer_copy_;
         };
+
+        template<typename type_, typename func_type>
+        void read_or_write_(type_&& dst_or_src, std::size_t count, std::size_t& read_or_write_index_, std::vector<type_> buf_, func_type&& func) {
+            size_t dst_or_src_index = 0;
+
+            while(dst_or_src_index < count) {
+                auto number_of_elements_to_process_this_iteration = std::min(buf_.size()-read_or_write_index_, count - dst_or_src_index);
+
+                func(dst_or_src+dst_or_src_index, buf_.data()+read_or_write_index_, number_of_elements_to_process_this_iteration);
+
+                read_or_write_index_ += number_of_elements_to_process_this_iteration;
+
+                if(read_or_write_index_ == buf_.size()) {
+                    read_or_write_index_ = 0;
+                }
+                dst_or_src_index += number_of_elements_to_process_this_iteration;
+            }
+        }
     }
 
     template<typename float_t = float, bool dst_and_src_alias = true>
@@ -70,7 +85,7 @@ namespace ez {
         }
 
         template<typename func_t = decltype(default_read_write)>
-        void read_write(float_t* dst, const float_t* src, std::size_t count, func_t&& read_write_func = default_read_write) {
+        void read_write(float_t* dst, const float_t* src, std::size_t count, func_t&& read_write_func = default_read_write) { // TODO: DRY, find a way to implement this using read_or_write_
             size_t dst_src_index = 0;
 
             auto src_ = base_class_type::make_copy_of_src_buffer_if_dst_and_src_alias_(src, count);
@@ -135,5 +150,37 @@ namespace ez {
 
         std::vector<float_t> buf_;
         std::size_t read_index_ = 0;
+    };
+
+    template<typename type>
+    class single_threaded_spsc_ringbuffer {
+    public:
+        void resize(std::size_t new_size) {
+            buf_.resize(std::max(new_size, std::size_t(1)));
+            read_index_ = read_index_ % buf_.size();
+        }
+
+        template<typename func_type>
+        void read(type* dst, std::size_t count, func_type&& write_func = elementwise_memcpy) {
+            read_or_write_(dst, count, read_index_, buf_, [&](type* dst, const type* src, std::size_t count) {
+                return write_func(dst, src, count);
+            });
+        }
+
+        template<typename func_type>
+        void write(const type* src, std::size_t count, func_type&& write_func = elementwise_memcpy) {
+            read_or_write_(src, count, read_index_, buf_, [&](const type* src, type* dst, std::size_t count) {
+                return write_func(dst, src, count);
+            });
+        }
+
+    private:
+        static void elementwise_memcpy(type* dst, const type* src, std::size_t elements_count) {
+            std::memcpy(dst, src, sizeof(type)*elements_count);
+        }
+
+        std::vector<type> buf_;
+        std::size_t read_index_  = 0,
+                    write_index_ = 0;
     };
 }
